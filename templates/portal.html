@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IglesiaApp | Portal Oficial</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- AOS (Animate On Scroll) CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/aos@next/dist/aos.css" />
+
+  <style>
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 15px rgba(245, 158, 11, 0.2); }
+      50% { box-shadow: 0 0 25px rgba(245, 158, 11, 0.5); }
+    }
+    .glow-amber {
+      animation: pulse-glow 3s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans overflow-x-hidden">
+
+  <!-- Navbar Público -->
+  <nav class="bg-slate-900/90 backdrop-blur-md border-b border-slate-800 sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        
+        <a href="#" class="flex items-center gap-2 font-bold text-xl text-yellow-400 transition transform hover:scale-105" data-aos="fade-right" data-aos-duration="600">
+          <div class="w-9 h-9 bg-slate-900 border border-amber-500/30 rounded-xl flex items-center justify-center shadow-inner">
+            <i class="fa-solid fa-church text-amber-400 text-lg"></i>
+          </div>
+          <span>Iglesia<span class="text-white">App</span></span>
+        </a>
+
+        <div class="hidden md:flex items-center gap-8 text-sm font-medium text-slate-300" data-aos="fade-down" data-aos-duration="600">
+          <a href="#inicio" class="hover:text-yellow-400 transition">Inicio</a>
+          <a href="#quienes-somos" class="hover:text-yellow-400 transition">¿Quiénes Somos?</a>
+          <a href="#servicios" class="hover:text-yellow-400 transition">Servicios</a>
+          <a href="#anuncios" class="hover:text-yellow-400 transition">Anuncios</a>
+        </div>
+
+        <div data-aos="fade-left" data-aos-duration="600">
+          {% if session.get('user_id') %}
+            <a href="{{ url_for('dashboard') }}" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-4 py-2 rounded-xl text-sm transition shadow-lg shadow-blue-600/30 flex items-center gap-2 hover:scale-105">
+              <i class="fa-solid fa-gauge"></i> Ir al Panel
+            </a>
+          {% else %}
+            <a href="{{ url_for('login') }}" class="glow-amber bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-sm transition shadow-lg shadow-amber-500/20 flex items-center gap-2 hover:scale-105">
+              <i class="fa-solid fa-right-to-bracket"></i> Iniciar Sesión
+            </a>
+          {% endif %}
+        </div>
+
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section / Inicio -->
+  <section id="inicio" class="py-20 text-center px-4 bg-gradient-to-b from-slate-900 to-slate-950">
+    <div class="max-w-4xl mx-auto">
+      <span class="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-amber-400 bg-amber-400/10 px-3 py-1 rounded-full border border-amber-400/20" data-aos="zoom-in" data-aos-duration="600">
+        <i class="fa-solid fa-house-chimney-heart"></i> Bienvenidos a Casa
+      </span>
+      <h1 class="text-4xl sm:text-6xl font-extrabold mt-4 mb-6 text-white leading-tight" data-aos="fade-up" data-aos-duration="800" data-aos-delay="100">
+        Un lugar para adorar y servir juntos
+      </h1>
+      <p class="text-slate-400 text-lg max-w-2xl mx-auto" data-aos="fade-up" data-aos-duration="800" data-aos-delay="200">
+        Te invitamos a ser parte de nuestras actividades y crecer en fe e impacto comunitario.
+      </p>
+    </div>
+  </section>
+
+  <!-- Sección: ¿Quiénes Somos? -->
+  <section id="quienes-somos" class="py-16 px-4 bg-slate-900/50 border-y border-slate-800">
+    <div class="max-w-5xl mx-auto grid md:grid-cols-2 gap-8 items-center">
+      <div data-aos="fade-right" data-aos-duration="800">
+        <div class="flex items-center gap-3 mb-4">
+          <div class="w-10 h-10 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-center text-amber-400">
+            <i class="fa-solid fa-users-between-lines text-lg"></i>
+          </div>
+          <h2 class="text-3xl font-bold text-white tracking-tight">¿Quiénes Somos?</h2>
+        </div>
+        <p class="text-slate-300 leading-relaxed mb-4">Somos una comunidad cristiana comprometida con la proclamación del Evangelio, la edificación de las familias y el servicio a nuestra sociedad.</p>
+        <p class="text-slate-400 leading-relaxed">Contamos con ministerios activos organizados por sociedades (Damas, Caballeros, Jóvenes y Evangelismo) enfocados en brindar apoyo espiritual y social a cada miembro.</p>
+      </div>
+      <div class="bg-slate-800/60 p-6 rounded-2xl border border-slate-700/50 transition hover:border-amber-500/40" data-aos="fade-left" data-aos-duration="800">
+        <h3 class="text-xl font-bold text-amber-400 mb-3 flex items-center gap-2"><i class="fa-solid fa-bullseye"></i> Nuestra Misión</h3>
+        <p class="text-slate-300 text-sm mb-4">Glorificar a Dios mediante la adoración, la comunión fraterna y el servicio constante a nuestro entorno.</p>
+        <h3 class="text-xl font-bold text-amber-400 mb-3 flex items-center gap-2"><i class="fa-solid fa-eye"></i> Nuestra Visión</h3>
+        <p class="text-slate-300 text-sm">Ser un faro de fe, formación y auxilio para cada familia de la comunidad.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Sección: Servicios -->
+  <section id="servicios" class="py-16 px-4 max-w-6xl mx-auto w-full">
+    <h2 class="text-3xl font-bold text-center text-white mb-10 flex items-center justify-center gap-3" data-aos="fade-up" data-aos-duration="600">
+      <div class="w-10 h-10 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-center text-amber-400">
+        <i class="fa-solid fa-calendar-days text-lg"></i>
+      </div>
+      <span>Nuestros Servicios</span>
+    </h2>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {% if servicios %}
+        {% for s in servicios %}
+        <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl transition hover:-translate-y-1.5 hover:border-amber-500/30" data-aos="fade-up" data-aos-duration="800" data-aos-delay="{{ loop.index0 * 150 }}">
+          <span class="text-xs font-bold uppercase px-2.5 py-1 rounded-md bg-blue-950 text-blue-400 border border-blue-800 inline-flex items-center gap-1.5">
+            <i class="fa-solid fa-bookmark text-[10px]"></i> {{ s.tipo_servicio }}
+          </span>
+          <h3 class="text-xl font-bold text-white mt-3 mb-2">{{ s.tipo_servicio }}</h3>
+          <p class="text-slate-400 text-sm mb-2"><i class="fa-regular fa-clock text-amber-400 mr-2"></i>{{ s.fecha }}</p>
+          <p class="text-slate-400 text-sm mb-1"><i class="fa-solid fa-user-tie text-amber-400 mr-2"></i>Predicador: {{ s.predicador if s.predicador else 'Por confirmar' }}</p>
+          <p class="text-slate-400 text-sm"><i class="fa-solid fa-user-gear text-amber-400 mr-2"></i>Director: {{ s.director if s.director else 'Por confirmar' }}</p>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="col-span-full text-center text-slate-500 py-6" data-aos="fade-up">No hay servicios programados recientemente.</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- Sección: Anuncios Generales -->
+  <section id="anuncios" class="py-16 px-4 bg-slate-900/40 border-t border-slate-800">
+    <div class="max-w-6xl mx-auto">
+      <h2 class="text-3xl font-bold text-center text-white mb-10 flex items-center justify-center gap-3" data-aos="fade-up" data-aos-duration="600">
+        <div class="w-10 h-10 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-center text-amber-400">
+          <i class="fa-solid fa-bullhorn text-lg"></i>
+        </div>
+        <span>Anuncios Generales y de Sociedades</span>
+      </h2>
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {% if anuncios %}
+          {% for a in anuncios %}
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between transition hover:-translate-y-1.5 hover:border-amber-500/30" data-aos="fade-up" data-aos-duration="800" data-aos-delay="{{ loop.index0 * 150 }}">
+            <div>
+              <div class="flex justify-between items-center mb-3">
+                <span class="text-xs font-bold uppercase px-2.5 py-1 rounded-full bg-amber-950 text-amber-300 border border-amber-800 flex items-center gap-1">
+                  <i class="fa-solid fa-circle-info text-[9px]"></i> General
+                </span>
+                <span class="text-xs text-slate-500 flex items-center gap-1"><i class="fa-regular fa-calendar text-[10px]"></i> {{ a.fecha }}</span>
+              </div>
+              <h3 class="text-lg font-bold text-white mb-2">{{ a.titulo }}</h3>
+              <p class="text-slate-300 text-sm leading-relaxed mb-4">{{ a.contenido }}</p>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="col-span-full text-center text-slate-500 py-6" data-aos="fade-up">No hay anuncios publicados por los momentos.</div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="mt-auto bg-slate-950 border-t border-slate-900 py-6 text-center text-slate-600 text-sm">
+    &copy; 2026 IglesiaApp. Todos los derechos reservados.
+  </footer>
+
+  <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+  <script>
+    AOS.init({
+      once: true,
+      duration: 700,
+      easing: 'ease-out-cubic'
+    });
+  </script>
+
+</body>
+</html>

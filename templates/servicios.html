@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="space-y-6 animate__animated animate__fadeIn animate__faster">
+
+  <!-- Encabezado de la Sección -->
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+    <div>
+      <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+        <i class="fa-solid fa-church text-amber-400"></i> Servicios y Cultos
+      </h1>
+      <p class="text-slate-400 text-xs mt-1">Registra nuevos servicios e inicia la toma de asistencia para los miembros.</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Formulario para Registrar Nuevo Servicio -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl h-fit">
+      <h3 class="text-base font-bold text-white mb-4 flex items-center gap-2 border-b border-slate-800 pb-3">
+        <i class="fa-solid fa-plus text-amber-400"></i> Nuevo Servicio
+      </h3>
+
+      <form action="{{ url_for('servicios') }}" method="POST" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Fecha</label>
+          <input type="date" name="fecha" id="fecha_servicio" required 
+            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-amber-500 transition text-sm">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Tipo de Servicio</label>
+          <select name="tipo_servicio" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-amber-500 transition text-sm">
+            <option value="Culto Dominical">Culto Dominical</option>
+            <option value="Culto de Oración y Ayuno">Culto de Oración y Ayuno</option>
+            <option value="Sociedad de Jóvenes">Sociedad de Jóvenes</option>
+            <option value="Sociedad de Damas">Sociedad de Damas</option>
+            <option value="Sociedad de Caballeros">Sociedad de Caballeros</option>
+            <option value="Servicio Especial">Servicio Especial</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Director</label>
+          <input type="text" name="director" placeholder="Ej: Hno. Juan Pérez" 
+            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 transition text-sm">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Predicador</label>
+          <input type="text" name="predicador" placeholder="Ej: Pastor Carlos Rodríguez" 
+            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 transition text-sm">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Observaciones</label>
+          <textarea name="observaciones" rows="2" placeholder="Notas o citas bíblicas..." 
+            class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 transition text-sm resize-none"></textarea>
+        </div>
+
+        <button type="submit" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-3 rounded-xl transition flex items-center justify-center gap-2 text-sm shadow-lg shadow-amber-500/10 active:scale-95">
+          <i class="fa-solid fa-floppy-disk"></i> Guardar y Tomar Asistencia
+        </button>
+      </form>
+    </div>
+
+    <!-- Lista de Servicios Realizados -->
+    <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+      <h3 class="text-base font-bold text-white mb-4 flex items-center gap-2 border-b border-slate-800 pb-3">
+        <i class="fa-solid fa-list-check text-slate-400"></i> Historial de Servicios
+      </h3>
+
+      <div class="space-y-3">
+        {% if servicios %}
+          {% for s in servicios %}
+          <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-slate-700 transition">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-lg">
+                  {{ s.tipo_servicio }}
+                </span>
+                <span class="text-xs text-slate-500 flex items-center gap-1">
+                  <i class="fa-regular fa-calendar"></i> {{ s.fecha }}
+                </span>
+              </div>
+              <p class="text-xs text-slate-300">
+                <strong class="text-slate-400">Director:</strong> {{ s.director or 'N/A' }} | 
+                <strong class="text-slate-400">Predicador:</strong> {{ s.predicador or 'N/A' }}
+              </p>
+              {% if s.observaciones %}
+                <p class="text-[11px] text-slate-500 italic">{{ s.observaciones }}</p>
+              {% endif %}
+            </div>
+
+            <a href="{{ url_for('asistencia', servicio_id=s.id) }}" 
+               class="self-start sm:self-auto bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 shrink-0">
+              <i class="fa-solid fa-clipboard-user"></i> Tomar Asistencia
+            </a>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="text-center py-12 text-slate-500 text-xs">
+            <i class="fa-solid fa-church text-3xl mb-2 block"></i>
+            No se han registrado servicios aún.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+  // Establece la fecha actual por defecto en el campo de fecha si está vacío
+  document.addEventListener('DOMContentLoaded', () => {
+    const inputFecha = document.getElementById('fecha_servicio');
+    if (inputFecha && !inputFecha.value) {
+      inputFecha.value = new Date().toISOString().split('T')[0];
+    }
+  });
+</script>
+{% endblock %}

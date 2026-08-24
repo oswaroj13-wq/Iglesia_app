@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="space-y-6 animate__animated animate__fadeIn animate__faster">
+
+  <!-- Encabezado y Filtro por Sociedad -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+    <div>
+      <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+        <span class="text-2xl">💰</span> Tesorería y Finanzas
+      </h1>
+      <p class="text-slate-400 text-xs mt-1">Gestión financiera general y fondos independientes por sociedades.</p>
+    </div>
+
+    <!-- Pestaña / Selector de Fondo -->
+    <div class="flex items-center gap-1 bg-slate-950 p-1.5 rounded-xl border border-slate-800 overflow-x-auto">
+      {% set sociedades = ['Todas', 'General', 'Jóvenes', 'Damas', 'Caballeros', 'Niños'] %}
+      {% for soc in sociedades %}
+        <a href="{{ url_for('tesoreria', sociedad=soc) }}" 
+           class="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition
+                  {{ 'bg-emerald-500 text-slate-950 font-bold shadow-md' if (sociedad_filtro if sociedad_filtro is defined else 'Todas') == soc else 'text-slate-400 hover:text-white' }}">
+          {{ soc }}
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Tarjetas Resumen de Finanzas -->
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+    
+    <!-- Total Ingresos -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex justify-between items-center transform transition duration-300 hover:-translate-y-1 hover:border-emerald-500/50 hover:shadow-emerald-500/10">
+      <div>
+        <span class="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1">
+          Ingresos ({{ sociedad_filtro if sociedad_filtro is defined else 'Todas' }})
+        </span>
+        <p class="text-2xl font-black text-emerald-400">
+          ${{ "%.2f"|format(total_ingresos if total_ingresos is defined else 0.0) }}
+        </p>
+      </div>
+      <div class="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold shadow-inner">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+      </div>
+    </div>
+
+    <!-- Total Egresos -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex justify-between items-center transform transition duration-300 hover:-translate-y-1 hover:border-rose-500/50 hover:shadow-rose-500/10">
+      <div>
+        <span class="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1">
+          Egresos / Gastos
+        </span>
+        <p class="text-2xl font-black text-rose-400">
+          ${{ "%.2f"|format(total_egresos if total_egresos is defined else 0.0) }}
+        </p>
+      </div>
+      <div class="w-11 h-11 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 font-bold shadow-inner">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path></svg>
+      </div>
+    </div>
+
+    <!-- Balance General -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex justify-between items-center transform transition duration-300 hover:-translate-y-1 hover:border-blue-500/50 hover:shadow-blue-500/10">
+      <div>
+        <span class="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1">
+          Balance Disponible
+        </span>
+        <p class="text-2xl font-black {{ 'text-emerald-400' if (balance if balance is defined else 0) >= 0 else 'text-rose-400' }}">
+          ${{ "%.2f"|format(balance if balance is defined else 0.0) }}
+        </p>
+      </div>
+      <div class="w-11 h-11 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 font-bold shadow-inner">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 18h12l3-18H3zm0 0h18M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"></path></svg>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Formulario e Historial de Movimientos -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Formulario para Registrar Transacción -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl h-fit">
+      <h3 class="text-base font-bold text-white mb-4 flex items-center gap-2 border-b border-slate-800 pb-3">
+        <span class="text-emerald-400">➕</span> Registrar Movimiento
+      </h3>
+
+      <form action="{{ url_for('tesoreria') }}" method="POST" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Fondo / Sociedad</label>
+          <select name="sociedad" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-emerald-500 transition text-sm">
+            <option value="General">Tesorería General</option>
+            <option value="Jóvenes">Sociedad de Jóvenes</option>
+            <option value="Damas">Sociedad de Damas</option>
+            <option value="Caballeros">Sociedad de Caballeros</option>
+            <option value="Niños">Escuela Dominical / Niños</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Tipo de Movimiento</label>
+          <select name="tipo" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-emerald-500 transition text-sm">
+            <option value="ingreso">Ingreso (Diezmo / Ofrenda / Actividad)</option>
+            <option value="egreso">Egreso (Gasto / Pago / Inversión)</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Monto ($)</label>
+          <input type="number" step="0.01" name="monto" required placeholder="0.00" 
+            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-emerald-500 transition text-sm">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Categoría</label>
+          <input type="text" name="categoria" placeholder="Ej: Pro-Fondo Venta, Diezmo, Sonido" 
+            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition text-sm">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-2">Descripción o Detalle</label>
+          <textarea name="descripcion" rows="2" placeholder="Detalle adicional del pago o aporte..." 
+            class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition text-sm resize-none"></textarea>
+        </div>
+
+        <button type="submit" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-3 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 text-sm shadow-lg shadow-emerald-500/10 active:scale-95">
+          💾 Guardar Movimiento
+        </button>
+      </form>
+    </div>
+
+    <!-- Lista de Movimientos Financieros -->
+    <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+      <h3 class="text-base font-bold text-white mb-4 flex items-center gap-2 border-b border-slate-800 pb-3">
+        <span class="text-slate-400">📋</span> Historial de Transacciones
+      </h3>
+
+      <div class="space-y-3">
+        {% if movimientos %}
+          {% for m in movimientos %}
+          <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl flex items-center justify-between gap-4 hover:border-slate-700 transition duration-200 transform hover:-translate-x-0.5">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded border 
+                  {{ 'bg-emerald-950 text-emerald-400 border-emerald-800/50' if m.tipo == 'ingreso' else 'bg-rose-950 text-rose-400 border-rose-800/50' }}">
+                  {{ m.tipo }}
+                </span>
+                <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800/50">
+                  {{ m.sociedad or 'General' }}
+                </span>
+                <span class="text-xs text-slate-500">{{ m.fecha }}</span>
+              </div>
+              <p class="text-xs font-semibold text-white">{{ m.categoria or 'General' }}</p>
+              {% if m.descripcion %}
+                <p class="text-[11px] text-slate-400">{{ m.descripcion }}</p>
+              {% endif %}
+            </div>
+
+            <div class="text-right shrink-0">
+              <span class="text-base font-extrabold {{ 'text-emerald-400' if m.tipo == 'ingreso' else 'text-rose-400' }}">
+                {{ '+' if m.tipo == 'ingreso' else '-' }}${{ "%.2f"|format(m.monto) }}
+              </span>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="text-center py-12 text-slate-500 text-xs">
+            <span class="text-3xl mb-2 block animate-bounce">🪙</span>
+            No hay movimientos registrados para esta sección.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

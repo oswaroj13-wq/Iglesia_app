@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Gestión de Usuarios{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+
+    <!-- Formulario Crear Usuario -->
+    <div class="bg-white text-slate-900 rounded-2xl p-6 shadow-xl border-t-4 border-amber-500">
+        <h2 class="text-xl font-bold mb-4 text-slate-800 flex items-center gap-2">
+            <i class="fa-solid fa-user-plus text-amber-500"></i> Registrar Nuevo Usuario
+        </h2>
+        
+        <form action="{{ url_for('usuarios') }}" method="POST" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">Nombre Completo</label>
+                <input type="text" name="nombre" required placeholder="Ej. Juan Delgado" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none">
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">Usuario (Login)</label>
+                <input type="text" name="username" required placeholder="Ej. jdelgado" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none">
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">Contraseña</label>
+                <input type="password" name="password" required placeholder="••••••••" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none">
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">Departamento / Área</label>
+                <select name="departamento" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none">
+                    <option value="general">General / Administración</option>
+                    <option value="jovenes">Jóvenes</option>
+                    <option value="damas">Damas</option>
+                    <option value="caballeros">Caballeros</option>
+                    <option value="niños">Escuela Dominical / Niños</option>
+                </select>
+            </div>
+
+            <div class="md:col-span-2 flex items-center space-x-2 py-2">
+                <input type="checkbox" name="is_admin" id="is_admin" value="1" class="w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500">
+                <label for="is_admin" class="text-sm font-medium text-slate-700">Conceder Privilegios de Administrador Global</label>
+            </div>
+
+            <div class="md:col-span-2">
+                <button type="submit" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3 rounded-xl transition shadow-md flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-floppy-disk"></i> Guardar Usuario
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Lista de Usuarios Registrados -->
+    <div class="bg-white text-slate-900 rounded-2xl p-6 shadow-xl border-t-4 border-slate-700">
+        <h2 class="text-xl font-bold mb-4 text-slate-800 flex items-center gap-2">
+            <i class="fa-solid fa-users text-slate-700"></i> Usuarios en el Sistema
+        </h2>
+        
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse min-w-[500px]">
+                <thead>
+                    <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 text-sm">
+                        <th class="p-3">Nombre</th>
+                        <th class="p-3">Usuario</th>
+                        <th class="p-3">Departamento</th>
+                        <th class="p-3">Rol</th>
+                        <th class="p-3 text-right">Acción</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 text-sm">
+                    {% for u in usuarios %}
+                    <tr class="hover:bg-slate-50">
+                        <td class="p-3 font-semibold text-slate-800">{{ u.nombre if u.nombre else 'Sin nombre' }}</td>
+                        <td class="p-3 font-mono text-slate-600">@{{ u.username }}</td>
+                        <td class="p-3 uppercase text-xs font-bold text-amber-600">{{ u.departamento if u.departamento else 'general' }}</td>
+                        <td class="p-3">
+                            {% if u.is_admin %}
+                            <span class="px-2.5 py-1 bg-amber-100 text-amber-800 rounded-lg text-xs font-bold">Admin</span>
+                            {% else %}
+                            <span class="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold">Líder</span>
+                            {% endif %}
+                        </td>
+                        <td class="p-3 text-right">
+                            {% if session.get('user_id') != u.id %}
+                            <a href="{{ url_for('eliminar_usuario', id=u.id) }}" onclick="return confirm('¿Confirma que desea eliminar el usuario @{{ u.username }}?');" class="text-rose-600 hover:text-rose-800 font-semibold text-xs bg-rose-50 px-3 py-1.5 rounded-lg transition">
+                                Eliminar
+                            </a>
+                            {% else %}
+                            <span class="text-xs text-slate-400 italic">Sesión actual</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

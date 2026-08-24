@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+  <!-- Formulario de Registro -->
+  <div class="bg-white rounded-2xl p-6 shadow-xl border border-slate-200 text-slate-800">
+    <h2 class="text-2xl font-bold mb-4 text-slate-900 flex items-center gap-2">
+      <i class="fa-solid fa-user-plus text-blue-600"></i> Registrar Miembro
+    </h2>
+
+    <form action="{{ url_for('miembros') }}" method="POST" class="space-y-4">
+      <div>
+        <label class="block text-sm font-semibold mb-1 text-slate-700">Nombre Completo</label>
+        <input type="text" name="nombre_completo" required placeholder="Ej: Raul Camejo"
+               class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold mb-1 text-slate-700">Teléfono</label>
+        <input type="text" name="telefono" placeholder="Ej: 0414-1234567"
+               class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold mb-1 text-slate-700">Ministerio / Área</label>
+        <select name="ministerio" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+          <option value="Ninguno">Ninguno</option>
+          <option value="Damas">Damas</option>
+          <option value="Caballeros">Caballeros</option>
+          <option value="Jóvenes">Jóvenes</option>
+          <option value="Evangelismo">Evangelismo</option>
+          <option value="Adoración">Adoración</option>
+          <option value="Ujieres">Ujieres</option>
+          <option value="Escuela Dominical">Escuela Dominical</option>
+          <option value="Servidores">Servidores</option>
+        </select>
+      </div>
+
+      <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl shadow-lg shadow-blue-600/30 transition duration-200">
+        Guardar Registro
+      </button>
+    </form>
+  </div>
+
+  <!-- Tabla / Directorio -->
+  <div class="lg:col-span-2 bg-slate-900/90 rounded-2xl p-6 shadow-xl border border-slate-800 backdrop-blur-md">
+    <h2 class="text-2xl font-bold mb-4 text-white flex items-center gap-2">
+      <i class="fa-solid fa-address-book text-blue-400"></i> Directorio de la Iglesia
+    </h2>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="border-b border-slate-700 text-slate-400 text-sm">
+            <th class="p-3">ID</th>
+            <th class="p-3">NOMBRE</th>
+            <th class="p-3">TELÉFONO</th>
+            <th class="p-3">MINISTERIO</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800 text-slate-200">
+          {% if miembros %}
+            {% for m in miembros %}
+            <tr class="hover:bg-slate-800/50 transition">
+              <td class="p-3 font-mono text-slate-400">#{{ m.id }}</td>
+              <td class="p-3 font-semibold text-white">{{ m.nombre_completo }}</td>
+              <td class="p-3">{{ m.telefono if m.telefono else 'N/A' }}</td>
+              <td class="p-3">
+                <span class="px-3 py-1 rounded-full text-xs font-medium bg-blue-950 text-blue-300 border border-blue-800">
+                  {{ m.ministerio }}
+                </span>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="4" class="p-6 text-center text-slate-400">
+                Todavía no hay miembros registrados. ¡Agrega el primero!
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

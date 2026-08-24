@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Asistencia - {{ servicio.tipo_servicio }}{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto bg-white rounded-xl shadow-md p-6 border-t-4 border-blue-600 mt-4">
+    <div class="flex justify-between items-center border-b pb-4 mb-4">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">Control de Asistencia</h1>
+            <p class="text-sm text-gray-600">{{ servicio.tipo_servicio }} — {{ servicio.fecha }}</p>
+        </div>
+        <a href="{{ url_for('secretaria') }}" class="text-sm text-blue-600 hover:underline font-semibold">← Volver a Secretaría</a>
+    </div>
+
+    <form action="{{ url_for('tomar_asistencia', servicio_id=servicio.id) }}" method="POST">
+        <div class="space-y-2 max-h-[60vh] overflow-y-auto pr-2">
+            {% for m in miembros %}
+            <label class="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition">
+                <span class="font-medium text-gray-800">{{ m.nombre_completo }}</span>
+                <input type="checkbox" name="asistencia" value="{{ m.id }}" 
+                       {{ 'checked' if m.id in presentes_set else '' }}
+                       class="w-5 h-5 text-blue-600 rounded focus:ring-blue-500">
+            </label>
+            {% else %}
+            <p class="text-center py-4 text-gray-500">No hay miembros registrados para pasar asistencia.</p>
+            {% endfor %}
+        </div>
+
+        <button type="submit" class="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition shadow-lg">
+            Guardar Asistencia
+        </button>
+    </form>
+</div>
+{% endblock %}
