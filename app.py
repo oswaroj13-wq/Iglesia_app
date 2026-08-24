@@ -9,18 +9,33 @@ from flask import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 
+# Importación condicional para evitar que falle en Pydroid 3 / Android
+try:
+    import libsql_experimental as libsql
+except ImportError:
+    libsql = None
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'clave_secreta_iglesia_app_clave_segura')
+
+# Credenciales de Turso (Variables de Entorno)
+TURSO_URL = os.environ.get('TURSO_DATABASE_URL')
+TURSO_TOKEN = os.environ.get('TURSO_AUTH_TOKEN')
 DATABASE = 'database.db'
 BACKUP_DIR = 'backups'
 
 # -------------------------------------------------------------------
-# MANEJO DE BASE DE DATOS SQLITE
+# MANEJO DE BASE DE DATOS (HÍBRIDO: TURSO NUBE / SQLITE LOCAL)
 # -------------------------------------------------------------------
 def get_db():
     if 'db' not in g:
-        g.db = sqlite3.connect(DATABASE)
-        g.db.row_factory = sqlite3.Row
+        # Solo conecta a Turso si hay credenciales Y el módulo está instalado (Render)
+        if TURSO_URL and TURSO_TOKEN and libsql is not None:
+            g.db = libsql.connect(database=TURSO_URL, auth_token=TURSO_TOKEN)
+        else:
+            # Respaldo local a SQLite para Pydroid 3 o desarrollo local
+            g.db = sqlite3.connect(DATABASE)
+            g.db.row_factory = sqlite3.Row
     return g.db
 
 @app.teardown_appcontext
@@ -110,12 +125,18 @@ def init_db():
         # Migración ligera: Verificar si la columna 'sociedad' existe en 'tesoreria'
         try:
             db.execute("SELECT sociedad FROM tesoreria LIMIT 1")
-        except sqlite3.OperationalError:
-            db.execute("ALTER TABLE tesoreria ADD COLUMN sociedad TEXT DEFAULT 'General'")
+        except Exception:
+            try:
+                db.execute("ALTER TABLE tesoreria ADD COLUMN sociedad TEXT DEFAULT 'General'")
+            except Exception:
+                pass
 
         # Crear usuario administrador por defecto si no existe ninguno
-        admin = db.execute('SELECT * FROM usuarios WHERE username = ?', ('admin',)).fetchone()
-        if not admin:
+        cursor = db.execute('SELECT COUNT(*) FROM usuarios WHERE username = ?', ('admin',))
+        row = cursor.fetchone()
+        admin_count = row[0] if row else 0
+
+        if admin_count == 0:
             db.execute(
                 'INSERT INTO usuarios (username, password, nombre, rol) VALUES (?, ?, ?, ?)',
                 ('admin', generate_password_hash('admin123'), 'Administrador', 'admin')
@@ -123,7 +144,7 @@ def init_db():
 
         db.commit()
 
-# Inicializar DB al arrancar
+# Inicializar DB al arrancar la aplicación
 init_db()
 
 # -------------------------------------------------------------------
@@ -189,11 +210,19 @@ def logout():
 @login_required
 def dashboard():
     db = get_db()
-    total_miembros = db.execute('SELECT COUNT(*) FROM miembros WHERE estado = "Activo"').fetchone()[0] or 0
-    total_servicios = db.execute('SELECT COUNT(*) FROM servicios').fetchone()[0] or 0
+    
+    res_m = db.execute('SELECT COUNT(*) FROM miembros WHERE estado = "Activo"').fetchone()
+    total_miembros = res_m[0] if res_m else 0
 
-    total_ingresos = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "ingreso"').fetchone()[0] or 0.0
-    total_egresos = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "egreso"').fetchone()[0] or 0.0
+    res_s = db.execute('SELECT COUNT(*) FROM servicios').fetchone()
+    total_servicios = res_s[0] if res_s else 0
+
+    res_i = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "ingreso"').fetchone()
+    total_ingresos = (res_i[0] or 0.0) if res_i else 0.0
+
+    res_e = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "egreso"').fetchone()
+    total_egresos = (res_e[0] or 0.0) if res_e else 0.0
+
     balance = total_ingresos - total_egresos
 
     ultimos_movimientos = db.execute('SELECT * FROM tesoreria ORDER BY id DESC LIMIT 5').fetchall()
@@ -261,8 +290,8 @@ def miembros():
             )
             db.commit()
             flash('Miembro registrado exitosamente.', 'success')
-        except sqlite3.IntegrityError:
-            flash('Error: La cédula ingresada ya se encuentra registrada.', 'danger')
+        except Exception:
+            flash('Error: La cédula ingresada ya se encuentra registrada o los datos son inválidos.', 'danger')
 
         return redirect(url_for('miembros'))
 
@@ -291,7 +320,7 @@ def editar_miembro(id):
         ''', (nombre, cedula, telefono, direccion, fecha_nacimiento, bautizado, sociedad, estado, id))
         db.commit()
         flash('Datos del miembro actualizados correctamente.', 'success')
-    except sqlite3.IntegrityError:
+    except Exception:
         flash('Error: La cédula ya pertenece a otro miembro.', 'danger')
 
     return redirect(url_for('miembros'))
@@ -365,10 +394,11 @@ def asistencia(servicio_id):
         todos_miembros = db.execute('SELECT id FROM miembros WHERE estado = "Activo"').fetchall()
 
         for m in todos_miembros:
-            asistio = 1 if str(m['id']) in asistentes else 0
+            m_id = m['id'] if isinstance(m, dict) or hasattr(m, '__getitem__') else m[0]
+            asistio = 1 if str(m_id) in asistentes else 0
             db.execute(
                 'INSERT INTO asistencia (servicio_id, miembro_id, asistio) VALUES (?, ?, ?)',
-                (servicio_id, m['id'], asistio)
+                (servicio_id, m_id, asistio)
             )
         db.commit()
         flash('Asistencia guardada correctamente.', 'success')
@@ -418,12 +448,18 @@ def tesoreria():
 
     if sociedad_filtro != 'Todas':
         movimientos = db.execute('SELECT * FROM tesoreria WHERE sociedad = ? ORDER BY id DESC', (sociedad_filtro,)).fetchall()
-        total_ingresos = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "ingreso" AND sociedad = ?', (sociedad_filtro,)).fetchone()[0] or 0.0
-        total_egresos = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "egreso" AND sociedad = ?', (sociedad_filtro,)).fetchone()[0] or 0.0
+        res_i = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "ingreso" AND sociedad = ?', (sociedad_filtro,)).fetchone()
+        total_ingresos = (res_i[0] or 0.0) if res_i else 0.0
+        
+        res_e = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "egreso" AND sociedad = ?', (sociedad_filtro,)).fetchone()
+        total_egresos = (res_e[0] or 0.0) if res_e else 0.0
     else:
         movimientos = db.execute('SELECT * FROM tesoreria ORDER BY id DESC').fetchall()
-        total_ingresos = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "ingreso"').fetchone()[0] or 0.0
-        total_egresos = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "egreso"').fetchone()[0] or 0.0
+        res_i = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "ingreso"').fetchone()
+        total_ingresos = (res_i[0] or 0.0) if res_i else 0.0
+        
+        res_e = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "egreso"').fetchone()
+        total_egresos = (res_e[0] or 0.0) if res_e else 0.0
 
     balance = total_ingresos - total_egresos
 
@@ -461,7 +497,7 @@ def descargar_db():
             as_attachment=True,
             download_name=f'respaldo_base_datos_{fecha_actual}.db'
         )
-    flash('No se encontró el archivo de base de datos para descargar.', 'danger')
+    flash('No se encontró el archivo de base de datos local para descargar.', 'danger')
     return redirect(url_for('seguridad'))
 
 @app.route('/seguridad/respaldar-db', methods=['POST'])
@@ -477,7 +513,7 @@ def respaldar_db():
         shutil.copy2(DATABASE, destino)
         flash(f'Respaldo local generado con éxito en: {destino}', 'success')
     else:
-        flash('No se encontró el archivo de base de datos.', 'danger')
+        flash('No se encontró el archivo de base de datos local para respaldar.', 'danger')
         
     return redirect(url_for('seguridad'))
 
@@ -490,30 +526,25 @@ def eliminar_db():
     db = get_db()
     user = db.execute('SELECT * FROM usuarios WHERE id = ?', (user_id,)).fetchone()
     
-    # Validar la clave contra la sesión del usuario administrador actual
     if user and check_password_hash(user['password'], admin_password):
-        # Respaldo automático preventivo
         if os.path.exists(DATABASE):
             if not os.path.exists(BACKUP_DIR):
                 os.makedirs(BACKUP_DIR)
             fecha_actual = datetime.now().strftime('%Y%m%d_%H%M%S')
-            shutil.copy2(DATABASE, os.path.join(BACKUP_DIR, f'PRE_DELETE_{fecha_actual}.db'))
-        
-        # Eliminar las tablas principales manteniendo la estructura
-        db.execute('DROP TABLE IF EXISTS asistencia')
-        db.execute('DROP TABLE IF EXISTS servicios')
-        db.execute('DROP TABLE IF EXISTS miembros')
-        db.execute('DROP TABLE IF EXISTS tesoreria')
-        db.execute('DROP TABLE IF EXISTS anuncios')
+            shutil.copy2(DATABASE, os.path.join(BACKUP_DIR, f'backup_pre_eliminar_{fecha_actual}.db'))
+
+        db.execute('DELETE FROM miembros')
+        db.execute('DELETE FROM servicios')
+        db.execute('DELETE FROM asistencia')
+        db.execute('DELETE FROM tesoreria')
+        db.execute('DELETE FROM anuncios')
         db.commit()
         
-        # Recrear tablas limpias
-        init_db()
-        flash('Base de datos reiniciada con éxito. Se generó un respaldo preventivo de emergencia.', 'success')
+        flash('Todos los registros de la base de datos han sido eliminados correctamente.', 'warning')
     else:
-        flash('Contraseña de administrador incorrecta. Operación cancelada.', 'danger')
+        flash('Contraseña de administración incorrecta. No se realizaron cambios.', 'danger')
         
     return redirect(url_for('seguridad'))
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(debug=True)
