@@ -9,14 +9,11 @@ from flask import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# Importación condicional para evitar fallos en Pydroid 3 o servidores sin la librería
+# Cliente HTTP liviano para Turso (Evita errores de hilos/Rust en Render)
 try:
-    import libsql_experimental as libsql
+    import libsql_client
 except ImportError:
-    try:
-        import libsql
-    except ImportError:
-        libsql = None
+    libsql_client = None
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'clave_secreta_iglesia_app_clave_segura')
@@ -27,16 +24,18 @@ TURSO_TOKEN = os.environ.get('TURSO_AUTH_TOKEN')
 DATABASE = 'database.db'
 BACKUP_DIR = 'backups'
 
+_db_initialized = False
+
 # -------------------------------------------------------------------
 # MANEJO DE BASE DE DATOS (HÍBRIDO: TURSO NUBE / SQLITE LOCAL)
 # -------------------------------------------------------------------
 def get_db():
     if 'db' not in g:
-        # Solo conecta a Turso si hay credenciales Y el módulo está instalado (Render)
-        if TURSO_URL and TURSO_TOKEN and libsql is not None:
-            g.db = libsql.connect(database=TURSO_URL, auth_token=TURSO_TOKEN)
+        if TURSO_URL and TURSO_TOKEN and libsql_client is not None:
+            # Conexión síncrona HTTP a Turso sin consumo elevado de recursos
+            g.db = libsql_client.create_client_sync(url=TURSO_URL, auth_token=TURSO_TOKEN)
         else:
-            # Respaldo local a SQLite para Pydroid 3 o desarrollo local
+            # Respaldo local SQLite para desarrollo
             g.db = sqlite3.connect(DATABASE)
             g.db.row_factory = sqlite3.Row
     return g.db
@@ -45,110 +44,137 @@ def get_db():
 def close_db(exception):
     db = g.pop('db', None)
     if db is not None:
-        db.close()
+        if hasattr(db, 'close'):
+            db.close()
+
+def execute_query(db, query, params=()):
+    """Ejecuta consultas de forma unificada para SQLite y libsql_client."""
+    if hasattr(db, 'execute'):
+        if libsql_client and isinstance(db, libsql_client.ClientSync):
+            return db.execute(query, params)
+        else:
+            return db.execute(query, params)
+    return None
 
 def init_db():
     """Inicializa la base de datos y crea las tablas si no existen."""
-    with app.app_context():
-        db = get_db()
-        
-        # Tabla de Usuarios
-        db.execute('''
-            CREATE TABLE IF NOT EXISTS usuarios (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL,
-                nombre TEXT NOT NULL,
-                rol TEXT DEFAULT 'admin'
-            )
-        ''')
+    db = get_db()
+    
+    # Tabla de Usuarios
+    execute_query(db, '''
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            nombre TEXT NOT NULL,
+            rol TEXT DEFAULT 'admin'
+        )
+    ''')
 
-        # Tabla de Miembros
-        db.execute('''
-            CREATE TABLE IF NOT EXISTS miembros (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nombre TEXT NOT NULL,
-                cedula TEXT,
-                telefono TEXT,
-                direccion TEXT,
-                fecha_nacimiento TEXT,
-                bautizado INTEGER DEFAULT 0,
-                sociedad TEXT DEFAULT 'General',
-                estado TEXT DEFAULT 'Activo'
-            )
-        ''')
+    # Tabla de Miembros
+    execute_query(db, '''
+        CREATE TABLE IF NOT EXISTS miembros (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            cedula TEXT,
+            telefono TEXT,
+            direccion TEXT,
+            fecha_nacimiento TEXT,
+            bautizado INTEGER DEFAULT 0,
+            sociedad TEXT DEFAULT 'General',
+            estado TEXT DEFAULT 'Activo'
+        )
+    ''')
 
-        # Tabla de Servicios y Cultos
-        db.execute('''
-            CREATE TABLE IF NOT EXISTS servicios (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                fecha TEXT NOT NULL,
-                tipo_servicio TEXT NOT NULL,
-                director TEXT,
-                predicador TEXT,
-                observaciones TEXT
-            )
-        ''')
+    # Tabla de Servicios y Cultos
+    execute_query(db, '''
+        CREATE TABLE IF NOT EXISTS servicios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT NOT NULL,
+            tipo_servicio TEXT NOT NULL,
+            director TEXT,
+            predicador TEXT,
+            observaciones TEXT
+        )
+    ''')
 
-        # Tabla de Asistencia
-        db.execute('''
-            CREATE TABLE IF NOT EXISTS asistencia (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                servicio_id INTEGER NOT NULL,
-                miembro_id INTEGER NOT NULL,
-                asistio INTEGER DEFAULT 0,
-                FOREIGN KEY (servicio_id) REFERENCES servicios (id) ON DELETE CASCADE,
-                FOREIGN KEY (miembro_id) REFERENCES miembros (id) ON DELETE CASCADE
-            )
-        ''')
+    # Tabla de Asistencia
+    execute_query(db, '''
+        CREATE TABLE IF NOT EXISTS asistencia (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            servicio_id INTEGER NOT NULL,
+            miembro_id INTEGER NOT NULL,
+            asistio INTEGER DEFAULT 0,
+            FOREIGN KEY (servicio_id) REFERENCES servicios (id) ON DELETE CASCADE,
+            FOREIGN KEY (miembro_id) REFERENCES miembros (id) ON DELETE CASCADE
+        )
+    ''')
 
-        # Tabla de Tesorería
-        db.execute('''
-            CREATE TABLE IF NOT EXISTS tesoreria (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                tipo TEXT NOT NULL,          -- 'ingreso' o 'egreso'
-                monto REAL NOT NULL,
-                categoria TEXT,              -- 'Diezmo', 'Ofrenda', 'Mantenimiento', etc.
-                sociedad TEXT DEFAULT 'General', -- 'General', 'Jóvenes', 'Damas', 'Caballeros', etc.
-                descripcion TEXT,
-                fecha TEXT NOT NULL
-            )
-        ''')
+    # Tabla de Tesorería
+    execute_query(db, '''
+        CREATE TABLE IF NOT EXISTS tesoreria (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo TEXT NOT NULL,          -- 'ingreso' o 'egreso'
+            monto REAL NOT NULL,
+            categoria TEXT,              -- 'Diezmo', 'Ofrenda', 'Mantenimiento', etc.
+            sociedad TEXT DEFAULT 'General', -- 'General', 'Jóvenes', 'Damas', etc.
+            descripcion TEXT,
+            fecha TEXT NOT NULL
+        )
+    ''')
 
-        # Tabla de Anuncios / Cartelera
-        db.execute('''
-            CREATE TABLE IF NOT EXISTS anuncios (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                titulo TEXT NOT NULL,
-                contenido TEXT NOT NULL,
-                fecha TEXT NOT NULL
-            )
-        ''')
+    # Tabla de Anuncios
+    execute_query(db, '''
+        CREATE TABLE IF NOT EXISTS anuncios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo TEXT NOT NULL,
+            contenido TEXT NOT NULL,
+            fecha TEXT NOT NULL
+        )
+    ''')
 
-        # Migración ligera: Verificar si la columna 'sociedad' existe en 'tesoreria'
+    # Intentar migración ligera si falta la columna sociedad
+    try:
+        execute_query(db, "SELECT sociedad FROM tesoreria LIMIT 1")
+    except Exception:
         try:
-            db.execute("SELECT sociedad FROM tesoreria LIMIT 1")
+            execute_query(db, "ALTER TABLE tesoreria ADD COLUMN sociedad TEXT DEFAULT 'General'")
         except Exception:
-            try:
-                db.execute("ALTER TABLE tesoreria ADD COLUMN sociedad TEXT DEFAULT 'General'")
-            except Exception:
-                pass
+            pass
 
-        # Crear usuario administrador por defecto si no existe ninguno
-        cursor = db.execute('SELECT COUNT(*) FROM usuarios WHERE username = ?', ('admin',))
-        row = cursor.fetchone()
-        admin_count = row[0] if row else 0
+    # Crear usuario administrador por defecto si no existe
+    try:
+        res = execute_query(db, 'SELECT COUNT(*) FROM usuarios WHERE username = ?', ('admin',))
+        admin_count = 0
+        if res:
+            if hasattr(res, 'rows'):
+                admin_count = res.rows[0][0] if res.rows else 0
+            else:
+                row = res.fetchone()
+                admin_count = row[0] if row else 0
 
         if admin_count == 0:
-            db.execute(
+            execute_query(
+                db,
                 'INSERT INTO usuarios (username, password, nombre, rol) VALUES (?, ?, ?, ?)',
                 ('admin', generate_password_hash('admin123'), 'Administrador', 'admin')
             )
+    except Exception:
+        pass
 
+    if hasattr(db, 'commit'):
         db.commit()
 
-# Inicializar DB al arrancar la aplicación
-init_db()
+@app.before_request
+def initialize_on_first_request():
+    """Garantiza la inicialización de la BD en la primera petición sin colgar Gunicorn."""
+    global _db_initialized
+    if not _db_initialized:
+        try:
+            init_db()
+            _db_initialized = True
+        except Exception as e:
+            print(f"Error inicializando DB: {e}")
 
 # -------------------------------------------------------------------
 # DECORADORES Y SEGURIDAD
@@ -163,17 +189,19 @@ def login_required(f):
     return decorated_function
 
 # -------------------------------------------------------------------
-# PORTAL / VISTA INICIAL PÚBLICA (Pasa servicios y anuncios)
+# PORTAL / VISTA INICIAL PÚBLICA
 # -------------------------------------------------------------------
 @app.route('/')
 @app.route('/portal', endpoint='portal')
 @app.route('/index', endpoint='index')
 def portal():
-    """Página de inicio pública del sistema."""
     db = get_db()
-    servicios = db.execute('SELECT * FROM servicios ORDER BY fecha DESC LIMIT 5').fetchall()
-    anuncios = db.execute('SELECT * FROM anuncios ORDER BY id DESC LIMIT 5').fetchall()
-    
+    res_s = execute_query(db, 'SELECT * FROM servicios ORDER BY fecha DESC LIMIT 5')
+    servicios = res_s.rows if hasattr(res_s, 'rows') else res_s.fetchall()
+
+    res_a = execute_query(db, 'SELECT * FROM anuncios ORDER BY id DESC LIMIT 5')
+    anuncios = res_a.rows if hasattr(res_a, 'rows') else res_a.fetchall()
+
     return render_template('portal.html', servicios=servicios, anuncios=anuncios)
 
 # -------------------------------------------------------------------
@@ -186,7 +214,15 @@ def login():
         password = request.form.get('password')
 
         db = get_db()
-        user = db.execute('SELECT * FROM usuarios WHERE username = ?', (username,)).fetchone()
+        res = execute_query(db, 'SELECT * FROM usuarios WHERE username = ?', (username,))
+        
+        user = None
+        if hasattr(res, 'rows'):
+            if res.rows:
+                cols = res.columns
+                user = dict(zip(cols, res.rows[0]))
+        else:
+            user = res.fetchone()
 
         if user and check_password_hash(user['password'], password):
             session.clear()
@@ -214,22 +250,27 @@ def logout():
 def dashboard():
     db = get_db()
     
-    res_m = db.execute('SELECT COUNT(*) FROM miembros WHERE estado = "Activo"').fetchone()
-    total_miembros = res_m[0] if res_m else 0
+    res_m = execute_query(db, 'SELECT COUNT(*) FROM miembros WHERE estado = "Activo"')
+    total_miembros = (res_m.rows[0][0] if hasattr(res_m, 'rows') and res_m.rows else res_m.fetchone()[0]) or 0
 
-    res_s = db.execute('SELECT COUNT(*) FROM servicios').fetchone()
-    total_servicios = res_s[0] if res_s else 0
+    res_s = execute_query(db, 'SELECT COUNT(*) FROM servicios')
+    total_servicios = (res_s.rows[0][0] if hasattr(res_s, 'rows') and res_s.rows else res_s.fetchone()[0]) or 0
 
-    res_i = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "ingreso"').fetchone()
-    total_ingresos = (res_i[0] or 0.0) if res_i else 0.0
+    res_i = execute_query(db, 'SELECT SUM(monto) FROM tesoreria WHERE tipo = "ingreso"')
+    val_i = (res_i.rows[0][0] if hasattr(res_i, 'rows') and res_i.rows else res_i.fetchone()[0])
+    total_ingresos = float(val_i) if val_i else 0.0
 
-    res_e = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "egreso"').fetchone()
-    total_egresos = (res_e[0] or 0.0) if res_e else 0.0
+    res_e = execute_query(db, 'SELECT SUM(monto) FROM tesoreria WHERE tipo = "egreso"')
+    val_e = (res_e.rows[0][0] if hasattr(res_e, 'rows') and res_e.rows else res_e.fetchone()[0])
+    total_egresos = float(val_e) if val_e else 0.0
 
     balance = total_ingresos - total_egresos
 
-    ultimos_movimientos = db.execute('SELECT * FROM tesoreria ORDER BY id DESC LIMIT 5').fetchall()
-    anuncios = db.execute('SELECT * FROM anuncios ORDER BY id DESC LIMIT 5').fetchall()
+    res_mov = execute_query(db, 'SELECT * FROM tesoreria ORDER BY id DESC LIMIT 5')
+    ultimos_movimientos = res_mov.rows if hasattr(res_mov, 'rows') else res_mov.fetchall()
+
+    res_anu = execute_query(db, 'SELECT * FROM anuncios ORDER BY id DESC LIMIT 5')
+    anuncios = res_anu.rows if hasattr(res_anu, 'rows') else res_anu.fetchall()
 
     return render_template('index.html',
                            total_miembros=total_miembros,
@@ -252,8 +293,8 @@ def crear_anuncio():
 
     if titulo and contenido:
         db = get_db()
-        db.execute('INSERT INTO anuncios (titulo, contenido, fecha) VALUES (?, ?, ?)', (titulo, contenido, fecha))
-        db.commit()
+        execute_query(db, 'INSERT INTO anuncios (titulo, contenido, fecha) VALUES (?, ?, ?)', (titulo, contenido, fecha))
+        if hasattr(db, 'commit'): db.commit()
         flash('Anuncio publicado con éxito.', 'success')
     else:
         flash('El título y contenido del anuncio son obligatorios.', 'danger')
@@ -264,13 +305,13 @@ def crear_anuncio():
 @login_required
 def eliminar_anuncio(id):
     db = get_db()
-    db.execute('DELETE FROM anuncios WHERE id = ?', (id,))
-    db.commit()
+    execute_query(db, 'DELETE FROM anuncios WHERE id = ?', (id,))
+    if hasattr(db, 'commit'): db.commit()
     flash('Anuncio eliminado correctamente.', 'info')
     return redirect(url_for('dashboard'))
 
 # -------------------------------------------------------------------
-# MÓDULO DE MIEMBROS (SIN SOLICITAR CÉDULA)
+# MÓDULO DE MIEMBROS
 # -------------------------------------------------------------------
 @app.route('/miembros', methods=['GET', 'POST'])
 @login_required
@@ -289,18 +330,20 @@ def miembros():
             return redirect(url_for('miembros'))
 
         try:
-            db.execute(
+            execute_query(
+                db,
                 'INSERT INTO miembros (nombre, cedula, telefono, direccion, fecha_nacimiento, bautizado, sociedad) VALUES (?, ?, ?, ?, ?, ?, ?)',
                 (nombre, None, telefono, direccion, fecha_nacimiento, bautizado, sociedad)
             )
-            db.commit()
+            if hasattr(db, 'commit'): db.commit()
             flash('Miembro registrado exitosamente.', 'success')
         except Exception as e:
             flash(f'Error al guardar el miembro: {str(e)}', 'danger')
 
         return redirect(url_for('miembros'))
 
-    lista_miembros = db.execute('SELECT * FROM miembros ORDER BY nombre ASC').fetchall()
+    res = execute_query(db, 'SELECT * FROM miembros ORDER BY nombre ASC')
+    lista_miembros = res.rows if hasattr(res, 'rows') else res.fetchall()
     return render_template('miembros.html', miembros=lista_miembros)
 
 @app.route('/miembros/editar/<int:id>', methods=['POST'])
@@ -316,12 +359,12 @@ def editar_miembro(id):
     estado = request.form.get('estado', 'Activo')
 
     try:
-        db.execute('''
+        execute_query(db, '''
             UPDATE miembros 
             SET nombre = ?, telefono = ?, direccion = ?, fecha_nacimiento = ?, bautizado = ?, sociedad = ?, estado = ?
             WHERE id = ?
         ''', (nombre, telefono, direccion, fecha_nacimiento, bautizado, sociedad, estado, id))
-        db.commit()
+        if hasattr(db, 'commit'): db.commit()
         flash('Datos del miembro actualizados correctamente.', 'success')
     except Exception as e:
         flash(f'Error al actualizar el miembro: {str(e)}', 'danger')
@@ -332,14 +375,14 @@ def editar_miembro(id):
 @login_required
 def eliminar_miembro(id):
     db = get_db()
-    db.execute('DELETE FROM miembros WHERE id = ?', (id,))
-    db.execute('DELETE FROM asistencia WHERE miembro_id = ?', (id,))
-    db.commit()
+    execute_query(db, 'DELETE FROM miembros WHERE id = ?', (id,))
+    execute_query(db, 'DELETE FROM asistencia WHERE miembro_id = ?', (id,))
+    if hasattr(db, 'commit'): db.commit()
     flash('Miembro eliminado del sistema.', 'info')
     return redirect(url_for('miembros'))
 
 # -------------------------------------------------------------------
-# MÓDULO DE SERVICIOS Y CULTOS (Soporta 'servicios' y 'secretaria')
+# MÓDULO DE SERVICIOS Y CULTOS
 # -------------------------------------------------------------------
 @app.route('/servicios', methods=['GET', 'POST'], endpoint='servicios')
 @app.route('/secretaria', endpoint='secretaria')
@@ -353,67 +396,75 @@ def servicios():
         predicador = request.form.get('predicador')
         observaciones = request.form.get('observaciones')
 
-        cursor = db.execute(
+        execute_query(
+            db,
             'INSERT INTO servicios (fecha, tipo_servicio, director, predicador, observaciones) VALUES (?, ?, ?, ?, ?)',
             (fecha, tipo_servicio, director, predicador, observaciones)
         )
-        db.commit()
+        if hasattr(db, 'commit'): db.commit()
 
-        servicio_id = cursor.lastrowid
+        res_id = execute_query(db, 'SELECT MAX(id) FROM servicios')
+        servicio_id = (res_id.rows[0][0] if hasattr(res_id, 'rows') and res_id.rows else res_id.fetchone()[0])
+
         flash('Servicio registrado con éxito. Puedes tomar la asistencia.', 'success')
         return redirect(url_for('asistencia', servicio_id=servicio_id))
 
-    lista_servicios = db.execute('SELECT * FROM servicios ORDER BY id DESC').fetchall()
+    res = execute_query(db, 'SELECT * FROM servicios ORDER BY id DESC')
+    lista_servicios = res.rows if hasattr(res, 'rows') else res.fetchall()
     return render_template('servicios.html', servicios=lista_servicios)
 
 @app.route('/servicios/eliminar/<int:id>')
 @login_required
 def eliminar_servicio(id):
     db = get_db()
-    db.execute('DELETE FROM servicios WHERE id = ?', (id,))
-    db.execute('DELETE FROM asistencia WHERE servicio_id = ?', (id,))
-    db.commit()
+    execute_query(db, 'DELETE FROM servicios WHERE id = ?', (id,))
+    execute_query(db, 'DELETE FROM asistencia WHERE servicio_id = ?', (id,))
+    if hasattr(db, 'commit'): db.commit()
     flash('Servicio y su registro de asistencia eliminados.', 'info')
     return redirect(url_for('servicios'))
 
 # -------------------------------------------------------------------
-# MÓDULO DE ASISTENCIA (Soporta 'asistencia' y 'tomar_asistencia')
+# MÓDULO DE ASISTENCIA
 # -------------------------------------------------------------------
 @app.route('/asistencia/<int:servicio_id>', methods=['GET', 'POST'], endpoint='asistencia')
 @app.route('/asistencia/<int:servicio_id>', methods=['GET', 'POST'], endpoint='tomar_asistencia')
 @login_required
 def asistencia(servicio_id):
     db = get_db()
-    servicio = db.execute('SELECT * FROM servicios WHERE id = ?', (servicio_id,)).fetchone()
+    res_s = execute_query(db, 'SELECT * FROM servicios WHERE id = ?', (servicio_id,))
+    servicio = (res_s.rows[0] if hasattr(res_s, 'rows') and res_s.rows else res_s.fetchone())
 
     if not servicio:
         flash('El servicio no existe.', 'danger')
         return redirect(url_for('servicios'))
 
     if request.method == 'POST':
-        db.execute('DELETE FROM asistencia WHERE servicio_id = ?', (servicio_id,))
+        execute_query(db, 'DELETE FROM asistencia WHERE servicio_id = ?', (servicio_id,))
 
         asistentes = request.form.getlist('asistio')
-        todos_miembros = db.execute('SELECT id FROM miembros WHERE estado = "Activo"').fetchall()
+        res_m = execute_query(db, 'SELECT id FROM miembros WHERE estado = "Activo"')
+        todos_miembros = res_m.rows if hasattr(res_m, 'rows') else res_m.fetchall()
 
         for m in todos_miembros:
-            m_id = m['id'] if isinstance(m, dict) or hasattr(m, '__getitem__') else m[0]
+            m_id = m[0]
             asistio = 1 if str(m_id) in asistentes else 0
-            db.execute(
+            execute_query(
+                db,
                 'INSERT INTO asistencia (servicio_id, miembro_id, asistio) VALUES (?, ?, ?)',
                 (servicio_id, m_id, asistio)
             )
-        db.commit()
+        if hasattr(db, 'commit'): db.commit()
         flash('Asistencia guardada correctamente.', 'success')
         return redirect(url_for('servicios'))
 
-    miembros = db.execute('''
+    res_m_list = execute_query(db, '''
         SELECT m.id, m.nombre, m.sociedad, COALESCE(a.asistio, 0) as asistio
         FROM miembros m
         LEFT JOIN asistencia a ON m.id = a.miembro_id AND a.servicio_id = ?
         WHERE m.estado = "Activo"
         ORDER BY m.nombre ASC
-    ''', (servicio_id,)).fetchall()
+    ''', (servicio_id,))
+    miembros = res_m_list.rows if hasattr(res_m_list, 'rows') else res_m_list.fetchall()
 
     return render_template('asistencia.html', servicio=servicio, miembros=miembros)
 
@@ -441,28 +492,30 @@ def tesoreria():
             flash('Por favor ingresa un monto válido mayor a 0.', 'danger')
             return redirect(url_for('tesoreria', sociedad=sociedad))
 
-        db.execute(
+        execute_query(
+            db,
             'INSERT INTO tesoreria (tipo, monto, categoria, sociedad, descripcion, fecha) VALUES (?, ?, ?, ?, ?, ?)',
             (tipo, monto, categoria, sociedad, descripcion, fecha)
         )
-        db.commit()
+        if hasattr(db, 'commit'): db.commit()
         flash('Movimiento financiero registrado correctamente.', 'success')
         return redirect(url_for('tesoreria', sociedad=sociedad))
 
     if sociedad_filtro != 'Todas':
-        movimientos = db.execute('SELECT * FROM tesoreria WHERE sociedad = ? ORDER BY id DESC', (sociedad_filtro,)).fetchall()
-        res_i = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "ingreso" AND sociedad = ?', (sociedad_filtro,)).fetchone()
-        total_ingresos = (res_i[0] or 0.0) if res_i else 0.0
-        
-        res_e = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "egreso" AND sociedad = ?', (sociedad_filtro,)).fetchone()
-        total_egresos = (res_e[0] or 0.0) if res_e else 0.0
+        res_mov = execute_query(db, 'SELECT * FROM tesoreria WHERE sociedad = ? ORDER BY id DESC', (sociedad_filtro,))
+        res_i = execute_query(db, 'SELECT SUM(monto) FROM tesoreria WHERE tipo = "ingreso" AND sociedad = ?', (sociedad_filtro,))
+        res_e = execute_query(db, 'SELECT SUM(monto) FROM tesoreria WHERE tipo = "egreso" AND sociedad = ?', (sociedad_filtro,))
     else:
-        movimientos = db.execute('SELECT * FROM tesoreria ORDER BY id DESC').fetchall()
-        res_i = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "ingreso"').fetchone()
-        total_ingresos = (res_i[0] or 0.0) if res_i else 0.0
-        
-        res_e = db.execute('SELECT SUM(monto) FROM tesoreria WHERE tipo = "egreso"').fetchone()
-        total_egresos = (res_e[0] or 0.0) if res_e else 0.0
+        res_mov = execute_query(db, 'SELECT * FROM tesoreria ORDER BY id DESC')
+        res_i = execute_query(db, 'SELECT SUM(monto) FROM tesoreria WHERE tipo = "ingreso"')
+        res_e = execute_query(db, 'SELECT SUM(monto) FROM tesoreria WHERE tipo = "egreso"')
+
+    movimientos = res_mov.rows if hasattr(res_mov, 'rows') else res_mov.fetchall()
+    val_i = (res_i.rows[0][0] if hasattr(res_i, 'rows') and res_i.rows else res_i.fetchone()[0])
+    total_ingresos = float(val_i) if val_i else 0.0
+
+    val_e = (res_e.rows[0][0] if hasattr(res_e, 'rows') and res_e.rows else res_e.fetchone()[0])
+    total_egresos = float(val_e) if val_e else 0.0
 
     balance = total_ingresos - total_egresos
 
@@ -477,8 +530,8 @@ def tesoreria():
 @login_required
 def eliminar_tesoreria(id):
     db = get_db()
-    db.execute('DELETE FROM tesoreria WHERE id = ?', (id,))
-    db.commit()
+    execute_query(db, 'DELETE FROM tesoreria WHERE id = ?', (id,))
+    if hasattr(db, 'commit'): db.commit()
     flash('Movimiento financiero eliminado correctamente.', 'info')
     return redirect(request.referrer or url_for('tesoreria'))
 
@@ -527,21 +580,24 @@ def eliminar_db():
     user_id = session.get('user_id')
     
     db = get_db()
-    user = db.execute('SELECT * FROM usuarios WHERE id = ?', (user_id,)).fetchone()
+    res = execute_query(db, 'SELECT * FROM usuarios WHERE id = ?', (user_id,))
+    user = (res.rows[0] if hasattr(res, 'rows') and res.rows else res.fetchone())
+
+    pass_hash = user[2] if hasattr(res, 'rows') else user['password']
     
-    if user and check_password_hash(user['password'], admin_password):
+    if user and check_password_hash(pass_hash, admin_password):
         if os.path.exists(DATABASE):
             if not os.path.exists(BACKUP_DIR):
                 os.makedirs(BACKUP_DIR)
             fecha_actual = datetime.now().strftime('%Y%m%d_%H%M%S')
             shutil.copy2(DATABASE, os.path.join(BACKUP_DIR, f'backup_pre_eliminar_{fecha_actual}.db'))
 
-        db.execute('DELETE FROM miembros')
-        db.execute('DELETE FROM servicios')
-        db.execute('DELETE FROM asistencia')
-        db.execute('DELETE FROM tesoreria')
-        db.execute('DELETE FROM anuncios')
-        db.commit()
+        execute_query(db, 'DELETE FROM miembros')
+        execute_query(db, 'DELETE FROM servicios')
+        execute_query(db, 'DELETE FROM asistencia')
+        execute_query(db, 'DELETE FROM tesoreria')
+        execute_query(db, 'DELETE FROM anuncios')
+        if hasattr(db, 'commit'): db.commit()
         
         flash('Todos los registros de la base de datos han sido eliminados correctamente.', 'warning')
     else:
