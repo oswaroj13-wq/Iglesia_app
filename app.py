@@ -27,15 +27,27 @@ BACKUP_DIR = 'backups'
 _db_initialized = False
 
 # -------------------------------------------------------------------
-# MANEJO DE BASE DE DATOS (HÍBRIDO: TURSO NUBE / SQLITE LOCAL)
+# INYECCIÓN DE USUARIO GLOBAL EN PLANTILLAS (SEGURIDAD DE VISTA)
+# -------------------------------------------------------------------
+@app.context_processor
+def inject_user():
+    """Hace disponible 'current_user' en todas las plantillas HTML."""
+    if 'user_id' in session:
+        return dict(current_user={
+            'id': session.get('user_id'),
+            'nombre': session.get('nombre'),
+            'username': session.get('username')
+        })
+    return dict(current_user=None)
+
+# -------------------------------------------------------------------
+# MANEJO DE BASE DE DATOS
 # -------------------------------------------------------------------
 def get_db():
     if 'db' not in g:
         if TURSO_URL and TURSO_TOKEN and libsql_client is not None:
-            # Conexión síncrona HTTP a Turso sin consumo elevado de recursos
             g.db = libsql_client.create_client_sync(url=TURSO_URL, auth_token=TURSO_TOKEN)
         else:
-            # Respaldo local SQLite para desarrollo
             g.db = sqlite3.connect(DATABASE)
             g.db.row_factory = sqlite3.Row
     return g.db
@@ -48,19 +60,13 @@ def close_db(exception):
             db.close()
 
 def execute_query(db, query, params=()):
-    """Ejecuta consultas de forma unificada para SQLite y libsql_client."""
     if hasattr(db, 'execute'):
-        if libsql_client and isinstance(db, libsql_client.ClientSync):
-            return db.execute(query, params)
-        else:
-            return db.execute(query, params)
+        return db.execute(query, params)
     return None
 
 def init_db():
-    """Inicializa la base de datos y crea las tablas si no existen."""
     db = get_db()
     
-    # Tabla de Usuarios
     execute_query(db, '''
         CREATE TABLE IF NOT EXISTS usuarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,7 +77,6 @@ def init_db():
         )
     ''')
 
-    # Tabla de Miembros
     execute_query(db, '''
         CREATE TABLE IF NOT EXISTS miembros (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,7 +91,6 @@ def init_db():
         )
     ''')
 
-    # Tabla de Servicios y Cultos
     execute_query(db, '''
         CREATE TABLE IF NOT EXISTS servicios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,7 +102,6 @@ def init_db():
         )
     ''')
 
-    # Tabla de Asistencia
     execute_query(db, '''
         CREATE TABLE IF NOT EXISTS asistencia (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,20 +113,18 @@ def init_db():
         )
     ''')
 
-    # Tabla de Tesorería
     execute_query(db, '''
         CREATE TABLE IF NOT EXISTS tesoreria (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tipo TEXT NOT NULL,          -- 'ingreso' o 'egreso'
+            tipo TEXT NOT NULL,
             monto REAL NOT NULL,
-            categoria TEXT,              -- 'Diezmo', 'Ofrenda', 'Mantenimiento', etc.
-            sociedad TEXT DEFAULT 'General', -- 'General', 'Jóvenes', 'Damas', etc.
+            categoria TEXT,
+            sociedad TEXT DEFAULT 'General',
             descripcion TEXT,
             fecha TEXT NOT NULL
         )
     ''')
 
-    # Tabla de Anuncios
     execute_query(db, '''
         CREATE TABLE IF NOT EXISTS anuncios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -133,7 +134,6 @@ def init_db():
         )
     ''')
 
-    # Intentar migración ligera si falta la columna sociedad
     try:
         execute_query(db, "SELECT sociedad FROM tesoreria LIMIT 1")
     except Exception:
@@ -142,7 +142,6 @@ def init_db():
         except Exception:
             pass
 
-    # Crear usuario administrador por defecto si no existe
     try:
         res = execute_query(db, 'SELECT COUNT(*) FROM usuarios WHERE username = ?', ('admin',))
         admin_count = 0
@@ -167,7 +166,6 @@ def init_db():
 
 @app.before_request
 def initialize_on_first_request():
-    """Garantiza la inicialización de la BD en la primera petición sin colgar Gunicorn."""
     global _db_initialized
     if not _db_initialized:
         try:
@@ -177,19 +175,19 @@ def initialize_on_first_request():
             print(f"Error inicializando DB: {e}")
 
 # -------------------------------------------------------------------
-# DECORADORES Y SEGURIDAD
+# DECORADOR DE SEGURIDAD (PROTECCIÓN DE RUTAS ADMIN)
 # -------------------------------------------------------------------
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
-            flash('Por favor, inicia sesión para continuar.', 'warning')
+            flash('Acceso denegado. Debes iniciar sesión para ingresar al área administrativa.', 'danger')
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
 
 # -------------------------------------------------------------------
-# PORTAL / VISTA INICIAL PÚBLICA
+# PORTAL PÚBLICO (Cualquiera puede entrar)
 # -------------------------------------------------------------------
 @app.route('/')
 @app.route('/portal', endpoint='portal')
@@ -205,10 +203,13 @@ def portal():
     return render_template('portal.html', servicios=servicios, anuncios=anuncios)
 
 # -------------------------------------------------------------------
-# RUTAS DE AUTENTICACIÓN
+# AUTENTICACIÓN
 # -------------------------------------------------------------------
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
@@ -229,7 +230,7 @@ def login():
             session['user_id'] = user['id']
             session['username'] = user['username']
             session['nombre'] = user['nombre']
-            flash(f'¡Bienvenido de nuevo, {user["nombre"]}!', 'success')
+            flash(f'Sesión iniciada correctamente. ¡Bienvenido, {user["nombre"]}!', 'success')
             return redirect(url_for('dashboard'))
         else:
             flash('Usuario o contraseña incorrectos.', 'danger')
@@ -239,11 +240,11 @@ def login():
 @app.route('/logout')
 def logout():
     session.clear()
-    flash('Has cerrado sesión correctamente.', 'info')
-    return redirect(url_for('login'))
+    flash('Has cerrado sesión exitosamente.', 'info')
+    return redirect(url_for('portal'))
 
 # -------------------------------------------------------------------
-# DASHBOARD / PANEL PRINCIPAL
+# PANEL ADMINISTRATIVO (PROTEGIDO CON @login_required)
 # -------------------------------------------------------------------
 @app.route('/dashboard', endpoint='dashboard')
 @login_required
@@ -282,7 +283,7 @@ def dashboard():
                            anuncios=anuncios)
 
 # -------------------------------------------------------------------
-# MÓDULO DE ANUNCIOS
+# RESTO DE MÓDULOS ADMINISTRATIVOS (TODOS PROTEGIDOS)
 # -------------------------------------------------------------------
 @app.route('/crear_anuncio', methods=['POST'])
 @login_required
@@ -295,9 +296,9 @@ def crear_anuncio():
         db = get_db()
         execute_query(db, 'INSERT INTO anuncios (titulo, contenido, fecha) VALUES (?, ?, ?)', (titulo, contenido, fecha))
         if hasattr(db, 'commit'): db.commit()
-        flash('Anuncio publicado con éxito.', 'success')
+        flash('Anuncio publicado.', 'success')
     else:
-        flash('El título y contenido del anuncio son obligatorios.', 'danger')
+        flash('Campos incompletos.', 'danger')
 
     return redirect(url_for('dashboard'))
 
@@ -307,12 +308,9 @@ def eliminar_anuncio(id):
     db = get_db()
     execute_query(db, 'DELETE FROM anuncios WHERE id = ?', (id,))
     if hasattr(db, 'commit'): db.commit()
-    flash('Anuncio eliminado correctamente.', 'info')
+    flash('Anuncio eliminado.', 'info')
     return redirect(url_for('dashboard'))
 
-# -------------------------------------------------------------------
-# MÓDULO DE MIEMBROS
-# -------------------------------------------------------------------
 @app.route('/miembros', methods=['GET', 'POST'])
 @login_required
 def miembros():
@@ -326,7 +324,7 @@ def miembros():
         sociedad = request.form.get('sociedad', 'General')
 
         if not nombre:
-            flash('El nombre del miembro es obligatorio.', 'danger')
+            flash('Nombre obligatorio.', 'danger')
             return redirect(url_for('miembros'))
 
         try:
@@ -336,9 +334,9 @@ def miembros():
                 (nombre, None, telefono, direccion, fecha_nacimiento, bautizado, sociedad)
             )
             if hasattr(db, 'commit'): db.commit()
-            flash('Miembro registrado exitosamente.', 'success')
+            flash('Miembro registrado.', 'success')
         except Exception as e:
-            flash(f'Error al guardar el miembro: {str(e)}', 'danger')
+            flash(f'Error: {str(e)}', 'danger')
 
         return redirect(url_for('miembros'))
 
@@ -365,9 +363,9 @@ def editar_miembro(id):
             WHERE id = ?
         ''', (nombre, telefono, direccion, fecha_nacimiento, bautizado, sociedad, estado, id))
         if hasattr(db, 'commit'): db.commit()
-        flash('Datos del miembro actualizados correctamente.', 'success')
+        flash('Miembro actualizado.', 'success')
     except Exception as e:
-        flash(f'Error al actualizar el miembro: {str(e)}', 'danger')
+        flash(f'Error: {str(e)}', 'danger')
 
     return redirect(url_for('miembros'))
 
@@ -378,12 +376,9 @@ def eliminar_miembro(id):
     execute_query(db, 'DELETE FROM miembros WHERE id = ?', (id,))
     execute_query(db, 'DELETE FROM asistencia WHERE miembro_id = ?', (id,))
     if hasattr(db, 'commit'): db.commit()
-    flash('Miembro eliminado del sistema.', 'info')
+    flash('Miembro eliminado.', 'info')
     return redirect(url_for('miembros'))
 
-# -------------------------------------------------------------------
-# MÓDULO DE SERVICIOS Y CULTOS
-# -------------------------------------------------------------------
 @app.route('/servicios', methods=['GET', 'POST'], endpoint='servicios')
 @app.route('/secretaria', endpoint='secretaria')
 @login_required
@@ -406,7 +401,7 @@ def servicios():
         res_id = execute_query(db, 'SELECT MAX(id) FROM servicios')
         servicio_id = (res_id.rows[0][0] if hasattr(res_id, 'rows') and res_id.rows else res_id.fetchone()[0])
 
-        flash('Servicio registrado con éxito. Puedes tomar la asistencia.', 'success')
+        flash('Servicio registrado.', 'success')
         return redirect(url_for('asistencia', servicio_id=servicio_id))
 
     res = execute_query(db, 'SELECT * FROM servicios ORDER BY id DESC')
@@ -420,12 +415,9 @@ def eliminar_servicio(id):
     execute_query(db, 'DELETE FROM servicios WHERE id = ?', (id,))
     execute_query(db, 'DELETE FROM asistencia WHERE servicio_id = ?', (id,))
     if hasattr(db, 'commit'): db.commit()
-    flash('Servicio y su registro de asistencia eliminados.', 'info')
+    flash('Servicio eliminado.', 'info')
     return redirect(url_for('servicios'))
 
-# -------------------------------------------------------------------
-# MÓDULO DE ASISTENCIA
-# -------------------------------------------------------------------
 @app.route('/asistencia/<int:servicio_id>', methods=['GET', 'POST'], endpoint='asistencia')
 @app.route('/asistencia/<int:servicio_id>', methods=['GET', 'POST'], endpoint='tomar_asistencia')
 @login_required
@@ -435,7 +427,7 @@ def asistencia(servicio_id):
     servicio = (res_s.rows[0] if hasattr(res_s, 'rows') and res_s.rows else res_s.fetchone())
 
     if not servicio:
-        flash('El servicio no existe.', 'danger')
+        flash('Servicio no encontrado.', 'danger')
         return redirect(url_for('servicios'))
 
     if request.method == 'POST':
@@ -454,7 +446,7 @@ def asistencia(servicio_id):
                 (servicio_id, m_id, asistio)
             )
         if hasattr(db, 'commit'): db.commit()
-        flash('Asistencia guardada correctamente.', 'success')
+        flash('Asistencia guardada.', 'success')
         return redirect(url_for('servicios'))
 
     res_m_list = execute_query(db, '''
@@ -468,9 +460,6 @@ def asistencia(servicio_id):
 
     return render_template('asistencia.html', servicio=servicio, miembros=miembros)
 
-# -------------------------------------------------------------------
-# MÓDULO DE TESORERÍA Y FINANZAS
-# -------------------------------------------------------------------
 @app.route('/tesoreria', methods=['GET', 'POST'])
 @login_required
 def tesoreria():
@@ -489,7 +478,7 @@ def tesoreria():
             if monto <= 0:
                 raise ValueError
         except (ValueError, TypeError):
-            flash('Por favor ingresa un monto válido mayor a 0.', 'danger')
+            flash('Monto inválido.', 'danger')
             return redirect(url_for('tesoreria', sociedad=sociedad))
 
         execute_query(
@@ -498,7 +487,7 @@ def tesoreria():
             (tipo, monto, categoria, sociedad, descripcion, fecha)
         )
         if hasattr(db, 'commit'): db.commit()
-        flash('Movimiento financiero registrado correctamente.', 'success')
+        flash('Movimiento financiero registrado.', 'success')
         return redirect(url_for('tesoreria', sociedad=sociedad))
 
     if sociedad_filtro != 'Todas':
@@ -532,12 +521,9 @@ def eliminar_tesoreria(id):
     db = get_db()
     execute_query(db, 'DELETE FROM tesoreria WHERE id = ?', (id,))
     if hasattr(db, 'commit'): db.commit()
-    flash('Movimiento financiero eliminado correctamente.', 'info')
+    flash('Movimiento eliminado.', 'info')
     return redirect(request.referrer or url_for('tesoreria'))
 
-# -------------------------------------------------------------------
-# MÓDULO DE SEGURIDAD Y RESPALDOS
-# -------------------------------------------------------------------
 @app.route('/seguridad')
 @login_required
 def seguridad():
@@ -553,7 +539,7 @@ def descargar_db():
             as_attachment=True,
             download_name=f'respaldo_base_datos_{fecha_actual}.db'
         )
-    flash('No se encontró el archivo de base de datos local para descargar.', 'danger')
+    flash('Archivo no encontrado.', 'danger')
     return redirect(url_for('seguridad'))
 
 @app.route('/seguridad/respaldar-db', methods=['POST'])
@@ -562,15 +548,12 @@ def respaldar_db():
     if os.path.exists(DATABASE):
         if not os.path.exists(BACKUP_DIR):
             os.makedirs(BACKUP_DIR)
-            
         fecha_actual = datetime.now().strftime('%Y%m%d_%H%M%S')
         destino = os.path.join(BACKUP_DIR, f'backup_local_{fecha_actual}.db')
-        
         shutil.copy2(DATABASE, destino)
-        flash(f'Respaldo local generado con éxito en: {destino}', 'success')
+        flash('Respaldo local generado.', 'success')
     else:
-        flash('No se encontró el archivo de base de datos local para respaldar.', 'danger')
-        
+        flash('Base de datos local no encontrada.', 'danger')
     return redirect(url_for('seguridad'))
 
 @app.route('/seguridad/eliminar-db', methods=['POST'])
@@ -599,9 +582,9 @@ def eliminar_db():
         execute_query(db, 'DELETE FROM anuncios')
         if hasattr(db, 'commit'): db.commit()
         
-        flash('Todos los registros de la base de datos han sido eliminados correctamente.', 'warning')
+        flash('Registros borrados correctamente.', 'warning')
     else:
-        flash('Contraseña de administración incorrecta. No se realizaron cambios.', 'danger')
+        flash('Contraseña incorrecta.', 'danger')
         
     return redirect(url_for('seguridad'))
 
