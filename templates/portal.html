@@ -27,7 +27,7 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between h-16">
         
-        <a href="#" class="flex items-center gap-2 font-bold text-xl text-yellow-400 transition transform hover:scale-105" data-aos="fade-right" data-aos-duration="600">
+        <a href="{{ url_for('portal') }}" class="flex items-center gap-2 font-bold text-xl text-yellow-400 transition transform hover:scale-105" data-aos="fade-right" data-aos-duration="600">
           <div class="w-9 h-9 bg-slate-900 border border-amber-500/30 rounded-xl flex items-center justify-center shadow-inner">
             <i class="fa-solid fa-church text-amber-400 text-lg"></i>
           </div>
@@ -42,7 +42,8 @@
         </div>
 
         <div data-aos="fade-left" data-aos-duration="600">
-          {% if session.get('user_id') %}
+          {# Verificación mediante la inyección del contexto global de seguridad 'current_user' #}
+          {% if current_user %}
             <a href="{{ url_for('dashboard') }}" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-4 py-2 rounded-xl text-sm transition shadow-lg shadow-blue-600/30 flex items-center gap-2 hover:scale-105">
               <i class="fa-solid fa-gauge"></i> Ir al Panel
             </a>
@@ -56,6 +57,24 @@
       </div>
     </div>
   </nav>
+
+  <!-- Notificaciones Flash de Seguridad y Errores -->
+  <div class="max-w-7xl mx-auto px-4 mt-4 w-full">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="p-4 mb-2 text-sm rounded-xl border flex items-center gap-2 shadow-lg 
+            {% if category == 'danger' %} bg-red-950/80 text-red-300 border-red-800
+            {% elif category == 'success' %} bg-emerald-950/80 text-emerald-300 border-emerald-800
+            {% elif category == 'info' %} bg-blue-950/80 text-blue-300 border-blue-800
+            {% else %} bg-amber-950/80 text-amber-300 border-amber-800 {% endif %}">
+            <i class="fa-solid fa-circle-info"></i>
+            <span>{{ message }}</span>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+  </div>
 
   <!-- Hero Section / Inicio -->
   <section id="inicio" class="py-20 text-center px-4 bg-gradient-to-b from-slate-900 to-slate-950">
@@ -105,14 +124,19 @@
     <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
       {% if servicios %}
         {% for s in servicios %}
+        {% set tipo = s.tipo_servicio if s.tipo_servicio else s[2] %}
+        {% set fecha_serv = s.fecha if s.fecha else s[1] %}
+        {% set pred = s.predicador if s.predicador else s[4] %}
+        {% set dir = s.director if s.director else s[3] %}
+        
         <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl transition hover:-translate-y-1.5 hover:border-amber-500/30" data-aos="fade-up" data-aos-duration="800" data-aos-delay="{{ loop.index0 * 150 }}">
           <span class="text-xs font-bold uppercase px-2.5 py-1 rounded-md bg-blue-950 text-blue-400 border border-blue-800 inline-flex items-center gap-1.5">
-            <i class="fa-solid fa-bookmark text-[10px]"></i> {{ s.tipo_servicio }}
+            <i class="fa-solid fa-bookmark text-[10px]"></i> {{ tipo }}
           </span>
-          <h3 class="text-xl font-bold text-white mt-3 mb-2">{{ s.tipo_servicio }}</h3>
-          <p class="text-slate-400 text-sm mb-2"><i class="fa-regular fa-clock text-amber-400 mr-2"></i>{{ s.fecha }}</p>
-          <p class="text-slate-400 text-sm mb-1"><i class="fa-solid fa-user-tie text-amber-400 mr-2"></i>Predicador: {{ s.predicador if s.predicador else 'Por confirmar' }}</p>
-          <p class="text-slate-400 text-sm"><i class="fa-solid fa-user-gear text-amber-400 mr-2"></i>Director: {{ s.director if s.director else 'Por confirmar' }}</p>
+          <h3 class="text-xl font-bold text-white mt-3 mb-2">{{ tipo }}</h3>
+          <p class="text-slate-400 text-sm mb-2"><i class="fa-regular fa-clock text-amber-400 mr-2"></i>{{ fecha_serv }}</p>
+          <p class="text-slate-400 text-sm mb-1"><i class="fa-solid fa-user-tie text-amber-400 mr-2"></i>Predicador: {{ pred if pred else 'Por confirmar' }}</p>
+          <p class="text-slate-400 text-sm"><i class="fa-solid fa-user-gear text-amber-400 mr-2"></i>Director: {{ dir if dir else 'Por confirmar' }}</p>
         </div>
         {% endfor %}
       {% else %}
@@ -133,16 +157,20 @@
       <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
         {% if anuncios %}
           {% for a in anuncios %}
+          {% set titulo_anuncio = a.titulo if a.titulo else a[1] %}
+          {% set contenido_anuncio = a.contenido if a.contenido else a[2] %}
+          {% set fecha_anuncio = a.fecha if a.fecha else a[3] %}
+          
           <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between transition hover:-translate-y-1.5 hover:border-amber-500/30" data-aos="fade-up" data-aos-duration="800" data-aos-delay="{{ loop.index0 * 150 }}">
             <div>
               <div class="flex justify-between items-center mb-3">
                 <span class="text-xs font-bold uppercase px-2.5 py-1 rounded-full bg-amber-950 text-amber-300 border border-amber-800 flex items-center gap-1">
                   <i class="fa-solid fa-circle-info text-[9px]"></i> General
                 </span>
-                <span class="text-xs text-slate-500 flex items-center gap-1"><i class="fa-regular fa-calendar text-[10px]"></i> {{ a.fecha }}</span>
+                <span class="text-xs text-slate-500 flex items-center gap-1"><i class="fa-regular fa-calendar text-[10px]"></i> {{ fecha_anuncio }}</span>
               </div>
-              <h3 class="text-lg font-bold text-white mb-2">{{ a.titulo }}</h3>
-              <p class="text-slate-300 text-sm leading-relaxed mb-4">{{ a.contenido }}</p>
+              <h3 class="text-lg font-bold text-white mb-2">{{ titulo_anuncio }}</h3>
+              <p class="text-slate-300 text-sm leading-relaxed mb-4 whitespace-pre-line">{{ contenido_anuncio }}</p>
             </div>
           </div>
           {% endfor %}
@@ -168,4 +196,5 @@
   </script>
 
 </body>
-</html>
+  </html>
+        
