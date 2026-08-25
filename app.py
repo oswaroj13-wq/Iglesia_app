@@ -9,11 +9,14 @@ from flask import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# Importación condicional para evitar que falle en Pydroid 3 / Android
+# Importación condicional para evitar fallos en Pydroid 3 / Android
 try:
     import libsql_experimental as libsql
 except ImportError:
-    libsql = None
+    try:
+        import libsql
+    except ImportError:
+        libsql = None
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'clave_secreta_iglesia_app_clave_segura')
@@ -65,7 +68,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS miembros (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre TEXT NOT NULL,
-                cedula TEXT UNIQUE,
+                cedula TEXT,
                 telefono TEXT,
                 direccion TEXT,
                 fecha_nacimiento TEXT,
@@ -267,7 +270,7 @@ def eliminar_anuncio(id):
     return redirect(url_for('dashboard'))
 
 # -------------------------------------------------------------------
-# MÓDULO DE MIEMBROS
+# MÓDULO DE MIEMBROS (SIN SOLICITAR CÉDULA)
 # -------------------------------------------------------------------
 @app.route('/miembros', methods=['GET', 'POST'])
 @login_required
@@ -275,23 +278,26 @@ def miembros():
     db = get_db()
     if request.method == 'POST':
         nombre = request.form.get('nombre')
-        cedula_raw = request.form.get('cedula', '').strip()
-        cedula = cedula_raw if cedula_raw else None
         telefono = request.form.get('telefono')
         direccion = request.form.get('direccion')
         fecha_nacimiento = request.form.get('fecha_nacimiento')
         bautizado = 1 if request.form.get('bautizado') == '1' else 0
         sociedad = request.form.get('sociedad', 'General')
 
+        if not nombre:
+            flash('El nombre del miembro es obligatorio.', 'danger')
+            return redirect(url_for('miembros'))
+
         try:
+            # Enviamos None a la columna cedula para evitar bloqueos por restricción UNIQUE
             db.execute(
                 'INSERT INTO miembros (nombre, cedula, telefono, direccion, fecha_nacimiento, bautizado, sociedad) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                (nombre, cedula, telefono, direccion, fecha_nacimiento, bautizado, sociedad)
+                (nombre, None, telefono, direccion, fecha_nacimiento, bautizado, sociedad)
             )
             db.commit()
             flash('Miembro registrado exitosamente.', 'success')
-        except Exception:
-            flash('Error: La cédula ingresada ya se encuentra registrada o los datos son inválidos.', 'danger')
+        except Exception as e:
+            flash(f'Error al guardar el miembro: {str(e)}', 'danger')
 
         return redirect(url_for('miembros'))
 
@@ -303,8 +309,6 @@ def miembros():
 def editar_miembro(id):
     db = get_db()
     nombre = request.form.get('nombre')
-    cedula_raw = request.form.get('cedula', '').strip()
-    cedula = cedula_raw if cedula_raw else None
     telefono = request.form.get('telefono')
     direccion = request.form.get('direccion')
     fecha_nacimiento = request.form.get('fecha_nacimiento')
@@ -315,13 +319,13 @@ def editar_miembro(id):
     try:
         db.execute('''
             UPDATE miembros 
-            SET nombre = ?, cedula = ?, telefono = ?, direccion = ?, fecha_nacimiento = ?, bautizado = ?, sociedad = ?, estado = ?
+            SET nombre = ?, telefono = ?, direccion = ?, fecha_nacimiento = ?, bautizado = ?, sociedad = ?, estado = ?
             WHERE id = ?
-        ''', (nombre, cedula, telefono, direccion, fecha_nacimiento, bautizado, sociedad, estado, id))
+        ''', (nombre, telefono, direccion, fecha_nacimiento, bautizado, sociedad, estado, id))
         db.commit()
         flash('Datos del miembro actualizados correctamente.', 'success')
-    except Exception:
-        flash('Error: La cédula ya pertenece a otro miembro.', 'danger')
+    except Exception as e:
+        flash(f'Error al actualizar el miembro: {str(e)}', 'danger')
 
     return redirect(url_for('miembros'))
 
@@ -497,54 +501,4 @@ def descargar_db():
             as_attachment=True,
             download_name=f'respaldo_base_datos_{fecha_actual}.db'
         )
-    flash('No se encontró el archivo de base de datos local para descargar.', 'danger')
-    return redirect(url_for('seguridad'))
-
-@app.route('/seguridad/respaldar-db', methods=['POST'])
-@login_required
-def respaldar_db():
-    if os.path.exists(DATABASE):
-        if not os.path.exists(BACKUP_DIR):
-            os.makedirs(BACKUP_DIR)
-            
-        fecha_actual = datetime.now().strftime('%Y%m%d_%H%M%S')
-        destino = os.path.join(BACKUP_DIR, f'backup_local_{fecha_actual}.db')
-        
-        shutil.copy2(DATABASE, destino)
-        flash(f'Respaldo local generado con éxito en: {destino}', 'success')
-    else:
-        flash('No se encontró el archivo de base de datos local para respaldar.', 'danger')
-        
-    return redirect(url_for('seguridad'))
-
-@app.route('/seguridad/eliminar-db', methods=['POST'])
-@login_required
-def eliminar_db():
-    admin_password = request.form.get('admin_password')
-    user_id = session.get('user_id')
-    
-    db = get_db()
-    user = db.execute('SELECT * FROM usuarios WHERE id = ?', (user_id,)).fetchone()
-    
-    if user and check_password_hash(user['password'], admin_password):
-        if os.path.exists(DATABASE):
-            if not os.path.exists(BACKUP_DIR):
-                os.makedirs(BACKUP_DIR)
-            fecha_actual = datetime.now().strftime('%Y%m%d_%H%M%S')
-            shutil.copy2(DATABASE, os.path.join(BACKUP_DIR, f'backup_pre_eliminar_{fecha_actual}.db'))
-
-        db.execute('DELETE FROM miembros')
-        db.execute('DELETE FROM servicios')
-        db.execute('DELETE FROM asistencia')
-        db.execute('DELETE FROM tesoreria')
-        db.execute('DELETE FROM anuncios')
-        db.commit()
-        
-        flash('Todos los registros de la base de datos han sido eliminados correctamente.', 'warning')
-    else:
-        flash('Contraseña de administración incorrecta. No se realizaron cambios.', 'danger')
-        
-    return redirect(url_for('seguridad'))
-
-if __name__ == '__main__':
-    app.run(debug=True)
+    flash('No se encontró el archivo de base de datos local para desc
