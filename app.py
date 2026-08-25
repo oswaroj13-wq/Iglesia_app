@@ -1,7 +1,7 @@
 import os
 import shutil
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 from flask import (
     Flask, render_template, request, redirect, 
@@ -16,7 +16,19 @@ except ImportError:
     libsql_client = None
 
 app = Flask(__name__)
+
+# -------------------------------------------------------------------
+# CONFIGURACIÓN DE SEGURIDAD Y SESIONES (AJUSTADO)
+# -------------------------------------------------------------------
 app.secret_key = os.environ.get('SECRET_KEY', 'clave_secreta_iglesia_app_clave_segura')
+
+# Expiración automática tras 4 horas de inactividad
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=4)
+
+# Banderas de seguridad para cookies (Protección anti Session Hijacking y XSS)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') == 'production'
 
 # Credenciales de Turso (Variables de Entorno)
 TURSO_URL = os.environ.get('TURSO_DATABASE_URL')
@@ -226,7 +238,8 @@ def login():
             user = res.fetchone()
 
         if user and check_password_hash(user['password'], password):
-            session.clear()
+            session.clear() # Limpia cualquier rastro previo de sesión
+            session.permanent = True # Activa la expiración por inactividad
             session['user_id'] = user['id']
             session['username'] = user['username']
             session['nombre'] = user['nombre']
@@ -239,7 +252,7 @@ def login():
 
 @app.route('/logout')
 def logout():
-    session.clear()
+    session.clear() # Destruye completamente la cookie y sesión en el servidor
     flash('Has cerrado sesión exitosamente.', 'info')
     return redirect(url_for('portal'))
 
