@@ -9,7 +9,7 @@ from flask import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# Importación condicional para evitar fallos en Pydroid 3 / Android
+# Importación condicional para evitar fallos en Pydroid 3 o servidores sin la librería
 try:
     import libsql_experimental as libsql
 except ImportError:
@@ -289,7 +289,6 @@ def miembros():
             return redirect(url_for('miembros'))
 
         try:
-            # Enviamos None a la columna cedula para evitar bloqueos por restricción UNIQUE
             db.execute(
                 'INSERT INTO miembros (nombre, cedula, telefono, direccion, fecha_nacimiento, bautizado, sociedad) VALUES (?, ?, ?, ?, ?, ?, ?)',
                 (nombre, None, telefono, direccion, fecha_nacimiento, bautizado, sociedad)
@@ -501,4 +500,54 @@ def descargar_db():
             as_attachment=True,
             download_name=f'respaldo_base_datos_{fecha_actual}.db'
         )
-    flash('No se encontró el archivo de base de datos local para desc
+    flash('No se encontró el archivo de base de datos local para descargar.', 'danger')
+    return redirect(url_for('seguridad'))
+
+@app.route('/seguridad/respaldar-db', methods=['POST'])
+@login_required
+def respaldar_db():
+    if os.path.exists(DATABASE):
+        if not os.path.exists(BACKUP_DIR):
+            os.makedirs(BACKUP_DIR)
+            
+        fecha_actual = datetime.now().strftime('%Y%m%d_%H%M%S')
+        destino = os.path.join(BACKUP_DIR, f'backup_local_{fecha_actual}.db')
+        
+        shutil.copy2(DATABASE, destino)
+        flash(f'Respaldo local generado con éxito en: {destino}', 'success')
+    else:
+        flash('No se encontró el archivo de base de datos local para respaldar.', 'danger')
+        
+    return redirect(url_for('seguridad'))
+
+@app.route('/seguridad/eliminar-db', methods=['POST'])
+@login_required
+def eliminar_db():
+    admin_password = request.form.get('admin_password')
+    user_id = session.get('user_id')
+    
+    db = get_db()
+    user = db.execute('SELECT * FROM usuarios WHERE id = ?', (user_id,)).fetchone()
+    
+    if user and check_password_hash(user['password'], admin_password):
+        if os.path.exists(DATABASE):
+            if not os.path.exists(BACKUP_DIR):
+                os.makedirs(BACKUP_DIR)
+            fecha_actual = datetime.now().strftime('%Y%m%d_%H%M%S')
+            shutil.copy2(DATABASE, os.path.join(BACKUP_DIR, f'backup_pre_eliminar_{fecha_actual}.db'))
+
+        db.execute('DELETE FROM miembros')
+        db.execute('DELETE FROM servicios')
+        db.execute('DELETE FROM asistencia')
+        db.execute('DELETE FROM tesoreria')
+        db.execute('DELETE FROM anuncios')
+        db.commit()
+        
+        flash('Todos los registros de la base de datos han sido eliminados correctamente.', 'warning')
+    else:
+        flash('Contraseña de administración incorrecta. No se realizaron cambios.', 'danger')
+        
+    return redirect(url_for('seguridad'))
+
+if __name__ == '__main__':
+    app.run(debug=True)
